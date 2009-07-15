@@ -1,0 +1,6 @@
+The test.html file uses YUI 3 Test module to express and validate the behavior and output of the native JSON API.  The source is rendered to the page using a copy of the dpSyntaxHighlightExample.js file found here:
+http://github.com/lsmith/dpsyntaxhighlightexample/tree/master
+
+There may be some assumptions in here that aren't strictly accurate compared to the verbiage in the ECMA 5 spec.  If you find a bad assumption, please add a ticket or fork and send me a pull request.
+
+The test suite is a work in progress.  It does a pretty decent job of API coverage at this point, but there's certainly more work needed to test the nooks and crannies.
