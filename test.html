@@ -490,9 +490,11 @@ suite.add(new Y.Test.Case({
     },
 
     test_stringifyDate : function () {
-        // This assumes Pacific Time Zone (GMT -7:00)
-        Y.Assert.areSame('{"dt":"1946-07-06T07:00:00Z"}',
-            JSON.stringify({dt : new Date(1946,6,6)}));
+        // native toJSON method should be called if available
+        var d = new Date(Date.UTC(1946,6,6)),
+            ref = d.toJSON ? d.toJSON() : "1946-07-06T00:00:00Z";
+
+        Y.Assert.areSame('{"dt":"'+ref+'"}', JSON.stringify({dt : d}));
     },
 
     test_stringifyFormValue : function () {
@@ -509,10 +511,12 @@ suite.add(new Y.Test.Case({
             textarea                : $('textarea').value,
             select                  : $('select').value,
             multiple_select         : $('multiple_select').value,
+            /* avoiding button value wackiness in IE
             button                  : $('button').value,
             button_with_value       : $('button_with_value').value,
             button_submit           : $('button_submit').value,
             button_submit_with_value: $('button_submit_with_value').value,
+            */
             input_button            : $('input_button').value,
             input_submit            : $('input_submit').value,
             input_image             : $('input_image').value
@@ -529,20 +533,80 @@ suite.add(new Y.Test.Case({
             '"textarea":"textarea",'+
             '"select":"selected",'+
             '"multiple_select":"selected",'+
+            /* avoiding button value wackiness in IE
             '"button":"",'+
             '"button_with_value":"button value",'+
             '"button_submit":"",'+
             '"button_submit_with_value":"submit button value",'+
+            */
             '"input_button":"input button",'+
             '"input_submit":"input submit",'+
             '"input_image":"input image"}',
             JSON.stringify(data));
+    },
+
+    test_replacerAfterToJSON : function () {
+        Y.Assert.areSame('{"a":"ABC"}',
+            JSON.stringify({a:{ toJSON: function () { return "abc"; } } },
+                function (k,v) {
+                    return typeof v === 'string' ? v.toUpperCase() : v;
+                }));
+
+        // Date instances in ES5 have toJSON that outputs toISOString, which
+        // means the replacer should never receive a Date instance
+        var str = JSON.stringify([new Date()], function (k,v) {
+            return (v instanceof Date) ? "X" : v;
+        });
+        Y.Assert.areSame(-1, str.indexOf("X"), "Date incorrectly received by replacer");
+    },
+
+    test_replacerReturningSerializables : function () {
+        var d = new Date(),
+            ref = JSON.stringify(d);
+
+        // String, Boolean, and Number returned from a replacer should be
+        // replaced with their simple representations.  toJSON will not be
+        // called on values returned from replacer.
+
+        Y.Assert.areSame("{\n  \"obj\": {\n    \"dt\": "+ref+",\n    \"bool\": true,\n    \"num\": 99,\n    \"str\": \"string\",\n    \"obj\": \"object\"\n  },\n  \"repl\": {\n    \"r_dt\": {},\n    \"r_bool\": true,\n    \"r_num\": 99,\n    \"r_str\": \"string\",\n    \"r_obj\": {}\n  }\n}",
+            JSON.stringify({
+                    obj: {
+                        dt: d,
+                        bool: new Boolean(true),
+                        num: new Number(99),
+                        str: new String("string"),
+                        obj: { toJSON: function () { return "object"; } }
+                    },
+                    repl: {
+                        r_dt: 1,
+                        r_bool: 1,
+                        r_num: 1,
+                        r_str: 1,
+                        r_obj: 1
+                    },
+                },
+                function (k,v) {
+                    switch (k) {
+                        case 'r_dt': return d;
+                        case 'r_bool': return new Boolean(true);
+                        case 'r_num': return new Number(99);
+                        case 'r_str': return new String("string");
+                        case 'r_obj': return { toJSON: function () { return "object"; } };
+                        default: return v;
+                    }
+                },2));
     }
 
 }));
 
 suite.add(new Y.Test.Case({
     name : "whitelist",
+
+    _should: {
+        fail: {
+            test_duplicatesInWhitelistArray : true
+        }
+    },
 
     test_emptyWhitelistArray : function () {
         Y.Assert.areSame('{}',
@@ -586,30 +650,13 @@ suite.add(new Y.Test.Case({
                 ],
                 baz : true},["foo","baz"]));
 
-    }
+    },
 
-    /*
-    // REMOVED for spec compatibility
-    test_whitelistObject : function () {
-        // (undocumented) supports an obj literal as well
-        Y.Assert.areSame('{"foo":[1,2,3,{"foo":"FOO","baz":true}],"baz":true}',
-            JSON.stringify({
-                foo : [
-                    1,2,3,{
-                        foo : "FOO",
-                        baz : true
-                    }
-                ],
-                bar : [
-                    1,2,3,{
-                        foo : "FOO",
-                        baz : true
-                    }
-                ],
-                baz : true
-            }, {foo : true, baz : false})); // values ignored
+    test_duplicatesInWhitelistArray : function () {
+        // Currently the ES5 spec does not prohibit duplicates, so the "correct"
+        // output is {"x":1,"x":1}
+        Y.Assert.areSame('{"x":1}',JSON.stringify({x:1},["x","x"]));
     }
-    */
 
 }));
 
@@ -763,6 +810,34 @@ suite.add(new Y.Test.Case({
         Y.Assert.areSame("NEW ITEM", data[99]);
         Y.Assert.areSame("NEW ITEM", data[8][" s p a c e d "][99]);
         Y.Assert.areSame("NEW ITEM", data[8].compact[99]);
+    }
+}));
+
+suite.add(new Y.Test.Case({
+    name : "toJSON",
+
+    test_toJSON_on_object: function () {
+        Y.Assert.areSame('"toJSON"',
+            JSON.stringify({ toJSON: function () { return "toJSON" } }));
+
+        // TODO: complex object with toJSON
+    },
+
+    test_toJSON_on_proto: function () {
+        function A() {}
+        A.prototype.toJSON = function () { return "A" };
+        
+        function B() {}
+        B.prototype = new A();
+
+        function C() {
+            this.x = "X";
+            this.y = "Y";
+            this.z = "Z";
+        }
+        C.prototype = new B();
+
+        Y.Assert.areSame('"A"', JSON.stringify(new C()));
     }
 }));
 
