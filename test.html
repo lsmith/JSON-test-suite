@@ -838,6 +838,16 @@ suite.add(new Y.Test.Case({
         C.prototype = new B();
 
         Y.Assert.areSame('"A"', JSON.stringify(new C()));
+    },
+
+    test_toJSON_returning_undefined: function () {
+        Y.Assert.areSame('{}',
+            JSON.stringify({
+                o: {
+                    foo: "bar",
+                    toJSON: function () { return undefined; }
+                }
+            }));
     }
 }));
 
@@ -928,6 +938,18 @@ suite.add(new Y.Test.Case({
                         return v;
                     }
                 },'_'));
+    },
+
+    test_toJSON_returning_undefined_but_replaced: function () {
+        Y.Assert.areSame('{"o":"SAVED"}',
+            JSON.stringify({
+                o: {
+                    foo: "bar",
+                    toJSON: function () { return undefined; }
+                }
+            },function (k,v) {
+                return v === undefined ? "SAVED" : v;
+            }));
     }
 }));
 
